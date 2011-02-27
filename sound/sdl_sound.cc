@@ -5,7 +5,7 @@
  */
 
 
-#ifdef __APPLE__
+#ifdef USE_FRAMEWORK_SDL
 #  include <SDL/SDL.h>
 #else
 #  include <SDL.h>

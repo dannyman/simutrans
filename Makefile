@@ -393,7 +393,8 @@ ifeq ($(BACKEND),sdl)
   endif
   ifeq ($(SDL_CFLAGS),)
     ifeq ($(OSTYPE),mac)
-      SDL_CFLAGS  := -Dmain=SDL_main
+      # If sdl-config is not present, assume SDL is installed as a framework.
+      SDL_CFLAGS  := -Dmain=SDL_main -DUSE_FRAMEWORK_SDL
       SDL_LDFLAGS := -framework SDL -framework Cocoa mac/SDLMain.m
     else
       SDL_CFLAGS  := -I$(MINGDIR)/include/SDL -Dmain=SDL_main

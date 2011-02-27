@@ -4,7 +4,7 @@
  * This file is part of the Simutrans project under the artistic licence.
  */
 
-#ifdef __APPLE__
+#ifdef USE_FRAMEWORK_SDL
 #  include <SDL/SDL.h>
 #  include <SDL/SDL_mixer.h>
 #else

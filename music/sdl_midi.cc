@@ -9,7 +9,7 @@
 
 #include <strings.h>
 
-#ifdef __APPLE__
+#ifdef USE_FRAMEWORK_SDL
 #  include <SDL/SDL.h>
 #  include <SDL/SDL_mixer.h>
 #else
