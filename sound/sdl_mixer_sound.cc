@@ -4,8 +4,14 @@
  * This file is part of the Simutrans project under the artistic licence.
  */
 
-#include <SDL.h>
-#include <SDL_mixer.h>
+#ifdef __APPLE__
+#  include <SDL/SDL.h>
+#  include <SDL/SDL_mixer.h>
+#else
+#  include <SDL.h>
+#  include <SDL_mixer.h>
+#endif
+
 #include <string.h>
 #include "sound.h"
 

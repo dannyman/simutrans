@@ -9,8 +9,14 @@
 
 #include <strings.h>
 
-#include <SDL.h>
-#include <SDL_mixer.h>
+#ifdef __APPLE__
+#  include <SDL/SDL.h>
+#  include <SDL/SDL_mixer.h>
+#else
+#  include <SDL.h>
+#  include <SDL_mixer.h>
+#endif
+
 #include "music.h"
 
 static int midi_number = -1;

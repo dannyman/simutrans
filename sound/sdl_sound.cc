@@ -5,7 +5,12 @@
  */
 
 
-#include <SDL.h>
+#ifdef __APPLE__
+#  include <SDL/SDL.h>
+#else
+#  include <SDL.h>
+#endif
+
 #include <string.h>
 #include "sound.h"
 #include "../simmem.h"

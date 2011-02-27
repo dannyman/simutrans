@@ -4,7 +4,11 @@
  * This file is part of the Simutrans project under the artistic licence.
  */
 
-#include <SDL.h>
+#ifdef __APPLE__
+#  include <SDL/SDL.h>
+#else
+#  include <SDL.h>
+#endif
 
 #ifndef _MSC_VER
 #include <unistd.h>

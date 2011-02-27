@@ -376,31 +376,29 @@ endif
 
 ifeq ($(BACKEND),sdl)
   SOURCES += simsys_s.cc
+  SOURCES += sound/sdl_sound.cc
   CFLAGS  += -DUSE_16BIT_DIB
   ifeq ($(OSTYPE),mac)
     # Core Audio (Quicktime) base sound system routines
-    SOURCES += sound/core-audio_sound.mm
     SOURCES += music/core-audio_midi.mm
     LIBS    += -framework Foundation -framework QTKit
+  else ifeq ($(findstring $(OSTYPE), cygwin mingw),)
+    SOURCES += music/no_midi.cc
   else
-    SOURCES  += sound/sdl_sound.cc
-    ifeq ($(findstring $(OSTYPE), cygwin mingw),)
-	    SOURCES += music/no_midi.cc
-    else
-      SOURCES += music/w32_midi.cc
-    endif
+    SOURCES += music/w32_midi.cc
   endif
-  ifeq ($(SDL_CONFIG),)
+  ifneq ($(SDL_CONFIG),)
+    SDL_CFLAGS  := $(shell $(SDL_CONFIG) --cflags)
+    SDL_LDFLAGS := $(shell $(SDL_CONFIG) --libs)
+  endif
+  ifeq ($(SDL_CFLAGS),)
     ifeq ($(OSTYPE),mac)
-      SDL_CFLAGS  := -I/System/Libraries/Frameworks/SDL/Headers -Dmain=SDL_main
-      SDL_LDFLAGS := -framework SDL -framework Cocoa -I/System/Libraries/Frameworks/SDL/Headers SDLMain.m
+      SDL_CFLAGS  := -Dmain=SDL_main
+      SDL_LDFLAGS := -framework SDL -framework Cocoa mac/SDLMain.m
     else
       SDL_CFLAGS  := -I$(MINGDIR)/include/SDL -Dmain=SDL_main
       SDL_LDFLAGS := -lSDLmain -lSDL -mwindows
     endif
-  else
-    SDL_CFLAGS  := $(shell $(SDL_CONFIG) --cflags)
-    SDL_LDFLAGS := $(shell $(SDL_CONFIG) --libs)
   endif
 
   CFLAGS += $(SDL_CFLAGS)
