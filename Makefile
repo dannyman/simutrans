@@ -77,7 +77,7 @@ else
 endif
 
 ALLEGRO_CONFIG ?= allegro-config
-SDL_CONFIG     ?= sdl-config
+SDL_CONFIG     ?= sdl2-config
 
 
 ifneq ($(OPTIMISE),)
@@ -473,10 +473,10 @@ ifeq ($(BACKEND),sdl)
   ifeq ($(SDL_CONFIG),)
     ifeq ($(OSTYPE),mac)
       SDL_CFLAGS  := -I/System/Libraries/Frameworks/SDL/Headers -Dmain=SDL_main
-      SDL_LDFLAGS := -framework SDL -framework Cocoa -I/System/Libraries/Frameworks/SDL/Headers SDLMain.m
+      SDL_LDFLAGS := -framework SDL2 -framework Cocoa -I/System/Libraries/Frameworks/SDL/Headers SDLMain.m
     else
       SDL_CFLAGS  := -I$(MINGDIR)/include/SDL -Dmain=SDL_main
-      SDL_LDFLAGS := -lSDLmain -lSDL
+      SDL_LDFLAGS := -lSDLmain -lSDL2
       ifeq  ($(WIN32_CONSOLE),)
         SDL_LDFLAGS += -mwindows
       endif

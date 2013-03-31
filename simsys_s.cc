@@ -4,7 +4,7 @@
  * This file is part of the Simutrans project under the artistic license.
  */
 
-#include <SDL.h>
+#include "SDL.h"
 
 #ifdef _WIN32
 // windows.h defines min and max macros which we don't want
@@ -81,7 +81,10 @@ static Uint8 blank_cursor[] = {
 	0x0,
 };
 
+static SDL_Window *window;
+static SDL_Renderer *renderer;
 static SDL_Surface *screen;
+static SDL_Texture *screen_tx;
 static int width = 16;
 static int height = 16;
 
@@ -119,33 +122,40 @@ bool dr_os_init(const int* parameter)
 resolution dr_query_screen_resolution()
 {
 	resolution res;
-#if SDL_VERSION_ATLEAST(1, 2, 10)
-	SDL_VideoInfo const& vi = *SDL_GetVideoInfo();
-	res.w = vi.current_w;
-	res.h = vi.current_h;
-#elif defined _WIN32
-	res.w = GetSystemMetrics(SM_CXSCREEN);
-	res.h = GetSystemMetrics(SM_CYSCREEN);
-#else
-	SDL_Rect** const modi = SDL_ListModes(0, SDL_FULLSCREEN);
-	if (modi && modi != (SDL_Rect**)-1) {
-		// return first
-		res.w = modi[0]->w;
-		res.h = modi[0]->h;
-	} else {
-		res.w = 704;
-		res.h = 560;
-	}
-#endif
+	SDL_DisplayMode mode;
+	SDL_GetCurrentDisplayMode(0, &mode);
+	DBG_MESSAGE("dr_query_screen_resolution(SDL)", "screen resolution width=%d, height=%d", mode.w, mode.h);
+	res.w = mode.w;
+	res.h = mode.h;
 	return res;
 }
 
+bool internal_create_surfaces() {
+	renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+	if (renderer == NULL) {
+		fprintf(stderr, "Couldn't create renderer: %s\n", SDL_GetError());
+		return false;
+	}
+
+	screen_tx = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, width, height);
+	if (screen_tx == NULL) {
+		fprintf(stderr, "Couldn't create texture: %s\n", SDL_GetError());
+		return false;
+	}
+
+	// Use default bitmasks
+	screen = SDL_CreateRGBSurface(0, width, height, COLOUR_DEPTH, 0, 0, 0, 0);
+	if (screen == NULL) {
+		fprintf(stderr, "Couldn't get the window surface: %s\n", SDL_GetError());
+		return false;
+	}
+
+	return true;
+}
 
 // open the window
 int dr_os_open(int w, int const h, int const fullscreen)
 {
-	Uint32 flags = sync_blit ? 0 : SDL_ASYNCBLIT;
-
 	// some cards need those alignments
 	// especially 64bit want a border of 8bytes
 	w = (w + 15) & 0x7FF0;
@@ -156,32 +166,20 @@ int dr_os_open(int w, int const h, int const fullscreen)
 	width = w;
 	height = h;
 
-	flags |= (fullscreen ? SDL_FULLSCREEN : SDL_RESIZABLE);
-#ifdef USE_HW
-	{
-		const SDL_VideoInfo *vi=SDL_GetVideoInfo();
-		printf( "hw_available=%i, video_mem=%i, blit_sw=%i\n", vi->hw_available, vi->video_mem, vi->blit_sw );
-		printf( "bpp=%i, bytes=%i\n", vi->vfmt->BitsPerPixel, vi->vfmt->BytesPerPixel );
-	}
-	flags |= SDL_HWSURFACE | SDL_DOUBLEBUF; // bltcopy in graphic memory should be faster ...
-#endif
-
-	// open the window now
-	screen = SDL_SetVideoMode(w, h, COLOUR_DEPTH, flags);
-	if (screen == NULL) {
+	Uint32 flags = SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL;
+	flags |= (fullscreen ? SDL_WINDOW_FULLSCREEN : SDL_WINDOW_RESIZABLE);
+	window = SDL_CreateWindow(SIM_TITLE, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w, h, flags);
+	if (window == NULL) {
 		fprintf(stderr, "Couldn't open the window: %s\n", SDL_GetError());
 		return 0;
 	}
-	else {
-		fprintf(stderr, "Screen Flags: requested=%x, actual=%x\n", flags, screen->flags);
+
+	if (!internal_create_surfaces()) {
+		return 0;
 	}
+	fprintf(stderr, "Screen Flags: %x\n", screen->flags);
 	DBG_MESSAGE("dr_os_open(SDL)", "SDL realized screen size width=%d, height=%d (requested w=%d, h=%d)", screen->w, screen->h, w, h);
 
-	SDL_EnableUNICODE(true);
-	SDL_EnableKeyRepeat(SDL_DEFAULT_REPEAT_DELAY, SDL_DEFAULT_REPEAT_INTERVAL);
-
-	// set the caption for the window
-	SDL_WM_SetCaption(SIM_TITLE, 0);
 	SDL_ShowCursor(0);
 	arrow = SDL_GetCursor();
 	hourglass = SDL_CreateCursor(hourglass_cursor, hourglass_cursor_mask, 16, 22, 8, 11);
@@ -199,9 +197,19 @@ void dr_os_close()
 {
 	SDL_FreeCursor(hourglass);
 	SDL_FreeCursor(blank);
-	// Hajo: SDL doc says, screen is free'd by SDL_Quit and should not be
-	// free'd by the user
-	// SDL_FreeSurface(screen);
+	SDL_DestroyTexture(screen_tx);
+	SDL_DestroyRenderer(renderer);
+	SDL_DestroyWindow(window);
+}
+
+
+void internal_lock() {
+	SDL_LockTexture(screen_tx, NULL, &screen->pixels, &screen->pitch);
+}
+
+
+void internal_unlock() {
+	SDL_UnlockTexture(screen_tx);
 }
 
 
@@ -209,10 +217,8 @@ void dr_os_close()
 int dr_textur_resize(unsigned short** const textur, int w, int const h)
 {
 #ifdef USE_HW
-	SDL_UnlockSurface(screen);
+	internal_unlock();
 #endif
-	int flags = screen->flags;
-
 
 	display_set_actual_width( w );
 	// some cards need those alignments
@@ -227,7 +233,11 @@ int dr_textur_resize(unsigned short** const textur, int w, int const h)
 		width = w;
 		height = h;
 
-		screen = SDL_SetVideoMode(w, h, COLOUR_DEPTH, flags);
+		SDL_SetWindowSize(window, w, h);
+		// Recreate the SDL surfaces at the new resolution.
+		SDL_DestroyTexture(screen_tx);
+		SDL_DestroyRenderer(renderer);
+		internal_create_surfaces();
 		printf("textur_resize()::screen=%p\n", screen);
 		if (screen) {
 			DBG_MESSAGE("dr_textur_resize(SDL)", "SDL realized screen size width=%d, height=%d (requested w=%d, h=%d)", screen->w, screen->h, w, h);
@@ -239,16 +249,14 @@ int dr_textur_resize(unsigned short** const textur, int w, int const h)
 		}
 		fflush(NULL);
 	}
-	*textur = (unsigned short*)screen->pixels;
+	*textur = dr_textur_init();
 	return w;
 }
 
 
 unsigned short *dr_textur_init()
 {
-#ifdef USE_HW
-	SDL_LockSurface(screen);
-#endif
+	internal_lock();
 	return (unsigned short*)screen->pixels;
 }
 
@@ -275,9 +283,11 @@ void dr_flush(void)
 {
 	display_flush_buffer();
 #ifdef USE_HW
-	SDL_UnlockSurface(screen);
-	SDL_Flip(screen);
-	SDL_LockSurface(screen);
+	internal_unlock();
+	SDL_RenderClear(renderer);
+	SDL_RenderCopy(renderer, screen_tx, NULL, NULL);
+	SDL_RenderPresent(renderer);
+	internal_lock();
 #endif
 }
 
@@ -297,7 +307,12 @@ void dr_textur(int xp, int yp, int w, int h)
 	if(  w*h>0  )
 #endif
 	{
-		SDL_UpdateRect(screen, xp, yp, w, h);
+		SDL_Rect rect;
+		rect.w = w;
+		rect.h = h;
+		rect.x = xp;
+		rect.y = yp;
+		SDL_UpdateRect(screen, &rect, 1);
 	}
 #endif
 }
@@ -306,7 +321,7 @@ void dr_textur(int xp, int yp, int w, int h)
 // move cursor to the specified location
 void move_pointer(int x, int y)
 {
-	SDL_WarpMouse((Uint16)x, (Uint16)y);
+	SDL_WarpMouseInWindow(window, x, y);
 }
 
 
@@ -330,7 +345,7 @@ int dr_screenshot(const char *filename, int x, int y, int w, int h)
 		return 1;
 	}
 #endif
-	return SDL_SaveBMP(SDL_GetVideoSurface(), filename) == 0 ? 1 : -1;
+	return SDL_SaveBMP(screen, filename) == 0 ? 1 : -1;
 }
 
 
@@ -341,7 +356,7 @@ int dr_screenshot(const char *filename, int x, int y, int w, int h)
 
 static inline unsigned int ModifierKeys(void)
 {
-	SDLMod mod = SDL_GetModState();
+	SDL_Keymod mod = SDL_GetModState();
 
 	return
 		(mod & KMOD_SHIFT ? 1 : 0) |
@@ -395,15 +410,21 @@ static void internal_GetEvents(bool const wait)
 	}
 
 	switch (event.type) {
-		case SDL_VIDEORESIZE:
-			sys_event.type = SIM_SYSTEM;
-			sys_event.code = SIM_SYSTEM_RESIZE;
-			sys_event.mx   = event.resize.w;
-			sys_event.my   = event.resize.h;
-			printf("expose: x=%i, y=%i\n", sys_event.mx, sys_event.my);
+		case SDL_WINDOWEVENT:
+			if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
+				sys_event.type = SIM_SYSTEM;
+				sys_event.code = SIM_SYSTEM_RESIZE;
+				sys_event.mx   = event.window.data1;
+				sys_event.my   = event.window.data2;
+				printf("expose: x=%i, y=%i\n", sys_event.mx, sys_event.my);
+				break;
+			} else {
+				// will be ignored ...
+				sys_event.type = SIM_SYSTEM;
+				sys_event.code = SIM_SYSTEM_UPDATE;
+			}
 			break;
-
-		case SDL_VIDEOEXPOSE:
+		case SDL_SYSWMEVENT:
 			// will be ignored ...
 			sys_event.type = SIM_SYSTEM;
 			sys_event.code = SIM_SYSTEM_UPDATE;
@@ -416,24 +437,26 @@ static void internal_GetEvents(bool const wait)
 			sys_event.my      = event.button.y;
 			sys_event.mb      = conv_mouse_buttons(SDL_GetMouseState(0, 0));
 			switch (event.button.button) {
-				case 1: sys_event.code = SIM_MOUSE_LEFTBUTTON;  break;
-				case 2: sys_event.code = SIM_MOUSE_MIDBUTTON;   break;
-				case 3: sys_event.code = SIM_MOUSE_RIGHTBUTTON; break;
-				case 4: sys_event.code = SIM_MOUSE_WHEELUP;     break;
-				case 5: sys_event.code = SIM_MOUSE_WHEELDOWN;   break;
+				case SDL_BUTTON_LEFT: sys_event.code = SIM_MOUSE_LEFTBUTTON;  break;
+				case SDL_BUTTON_MIDDLE: sys_event.code = SIM_MOUSE_MIDBUTTON;   break;
+				case SDL_BUTTON_RIGHT: sys_event.code = SIM_MOUSE_RIGHTBUTTON; break;
+				// Probably wrong
+				case SDL_BUTTON_X1: sys_event.code = SIM_MOUSE_WHEELUP;     break;
+				case SDL_BUTTON_X2: sys_event.code = SIM_MOUSE_WHEELDOWN;   break;
 			}
 			break;
 
 		case SDL_MOUSEBUTTONUP:
+			dbg->warning("internal_GetEvents", "Got mouse event, x=%d, y=%d", event.button.x, event.button.y);
 			sys_event.type    = SIM_MOUSE_BUTTONS;
 			sys_event.key_mod = ModifierKeys();
 			sys_event.mx      = event.button.x;
 			sys_event.my      = event.button.y;
 			sys_event.mb      = conv_mouse_buttons(SDL_GetMouseState(0, 0));
 			switch (event.button.button) {
-				case 1: sys_event.code = SIM_MOUSE_LEFTUP;  break;
-				case 2: sys_event.code = SIM_MOUSE_MIDUP;   break;
-				case 3: sys_event.code = SIM_MOUSE_RIGHTUP; break;
+				case SDL_BUTTON_LEFT: sys_event.code = SIM_MOUSE_LEFTUP;  break;
+				case SDL_BUTTON_MIDDLE: sys_event.code = SIM_MOUSE_MIDUP;   break;
+				case SDL_BUTTON_RIGHT: sys_event.code = SIM_MOUSE_RIGHTUP; break;
 			}
 			break;
 
@@ -446,7 +469,7 @@ static void internal_GetEvents(bool const wait)
 #else
 			const bool numlock = SDL_GetModState() & KMOD_NUM;
 #endif
-			SDLKey const  sym     = event.key.keysym.sym;
+			SDL_Keycode sym = event.key.keysym.sym;
 			switch (sym) {
 				case SDLK_DELETE:   code = 127;                           break;
 				case SDLK_DOWN:     code = SIM_KEY_DOWN;                  break;
@@ -467,16 +490,16 @@ static void internal_GetEvents(bool const wait)
 				case SDLK_F13:      code = SIM_KEY_F13;                   break;
 				case SDLK_F14:      code = SIM_KEY_F14;                   break;
 				case SDLK_F15:      code = SIM_KEY_F15;                   break;
-				case SDLK_KP0:      code = numlock ? '0' : 0;             break;
-				case SDLK_KP1:      code = numlock ? '1' : SIM_KEY_END;   break;
-				case SDLK_KP2:      code = numlock ? '2' : SIM_KEY_DOWN;  break;
-				case SDLK_KP3:      code = numlock ? '3' : '<';           break;
-				case SDLK_KP4:      code = numlock ? '4' : SIM_KEY_LEFT;  break;
-				case SDLK_KP5:      code = numlock ? '5' : 0;             break;
-				case SDLK_KP6:      code = numlock ? '6' : SIM_KEY_RIGHT; break;
-				case SDLK_KP7:      code = numlock ? '7' : SIM_KEY_HOME;  break;
-				case SDLK_KP8:      code = numlock ? '8' : SIM_KEY_UP;    break;
-				case SDLK_KP9:      code = numlock ? '9' : '>';           break;
+				case SDLK_KP_0:     code = numlock ? '0' : 0;             break;
+				case SDLK_KP_1:     code = numlock ? '1' : SIM_KEY_END;   break;
+				case SDLK_KP_2:     code = numlock ? '2' : SIM_KEY_DOWN;  break;
+				case SDLK_KP_3:     code = numlock ? '3' : '<';           break;
+				case SDLK_KP_4:     code = numlock ? '4' : SIM_KEY_LEFT;  break;
+				case SDLK_KP_5:     code = numlock ? '5' : 0;             break;
+				case SDLK_KP_6:     code = numlock ? '6' : SIM_KEY_RIGHT; break;
+				case SDLK_KP_7:     code = numlock ? '7' : SIM_KEY_HOME;  break;
+				case SDLK_KP_8:     code = numlock ? '8' : SIM_KEY_UP;    break;
+				case SDLK_KP_9:     code = numlock ? '9' : '>';           break;
 				case SDLK_LEFT:     code = SIM_KEY_LEFT;                  break;
 				case SDLK_PAGEDOWN: code = '<';                           break;
 				case SDLK_PAGEUP:   code = '>';                           break;
@@ -536,7 +559,6 @@ static void internal_GetEvents(bool const wait)
 			sys_event.key_mod = ModifierKeys();
 			break;
 
-		case SDL_ACTIVEEVENT:
 		case SDL_KEYUP:
 			sys_event.type = SIM_KEYBOARD;
 			sys_event.code = 0;
