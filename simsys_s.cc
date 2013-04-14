@@ -101,6 +101,22 @@ static SDL_Cursor* blank;
 #define BMASK 0x001F
 #define AMASK 0x8000
 
+// Drop events that are fired frequently that we aren't interested in.
+// The internal_GetEvents function expects that events excluding SDL_MOUSEMOTION
+// come in approximately one at a time and are all more or less interesting.
+static int filter_SDL_event(void* /* unused userdata */, SDL_Event* event)
+{
+	switch (event->type) {
+	case SDL_FINGERDOWN:
+	case SDL_FINGERUP:
+	case SDL_FINGERMOTION:
+	case SDL_MULTIGESTURE:
+		return 0;
+	default:
+		return 1;
+	}
+}
+
 /*
  * Hier sind die Basisfunktionen zur Initialisierung der
  * Schnittstelle untergebracht
@@ -118,6 +134,8 @@ bool dr_os_init(const int* parameter)
 	// prepare for next event
 	sys_event.type = SIM_NOEVENT;
 	sys_event.code = 0;
+
+	SDL_SetEventFilter(filter_SDL_event, NULL);
 
 	atexit(SDL_Quit); // clean up on exit
 	return true;
