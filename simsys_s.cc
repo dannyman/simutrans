@@ -95,11 +95,10 @@ static SDL_Cursor* arrow;
 static SDL_Cursor* hourglass;
 static SDL_Cursor* blank;
 
-// Color component bitmasks for the ARGB1555 pixel format used by simgraph16.cc
-#define RMASK 0x7c00
-#define GMASK 0x03E0
+// Color component bitmasks for the RGB555 pixel format used by simgraph16.cc
+#define RMASK 0x7c00  // 0x1f << 10
+#define GMASK 0x03E0  // 0x1f << 5
 #define BMASK 0x001F
-#define AMASK 0x8000
 
 // Drop events that are fired frequently that we aren't interested in.
 // The internal_GetEvents function expects that events excluding SDL_MOUSEMOTION
@@ -160,14 +159,15 @@ bool internal_create_surfaces() {
 		return false;
 	}
 
-	screen_tx = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB1555, SDL_TEXTUREACCESS_STREAMING, width, height);
+	screen_tx = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB555, SDL_TEXTUREACCESS_STREAMING, width, height);
 	if (screen_tx == NULL) {
 		fprintf(stderr, "Couldn't create texture: %s\n", SDL_GetError());
 		return false;
 	}
 
-	// Use default bitmasks
-	screen = SDL_CreateRGBSurface(0, width, height, COLOUR_DEPTH, RMASK, GMASK, BMASK, AMASK);
+	// Use bitmasks appropriate for RGB555 mode. (Alpha is handled below the SDL level,
+	// within simgraph16.cc.)
+	screen = SDL_CreateRGBSurface(0, width, height, COLOUR_DEPTH, RMASK, GMASK, BMASK, 0);
 	if (screen == NULL) {
 		fprintf(stderr, "Couldn't get the window surface: %s\n", SDL_GetError());
 		return false;
