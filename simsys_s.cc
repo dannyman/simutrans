@@ -95,6 +95,11 @@ static SDL_Cursor* arrow;
 static SDL_Cursor* hourglass;
 static SDL_Cursor* blank;
 
+// Color component bitmasks for the ARGB1555 pixel format used by simgraph16.cc
+#define RMASK 0x7c00
+#define GMASK 0x03E0
+#define BMASK 0x001F
+#define AMASK 0x8000
 
 /*
  * Hier sind die Basisfunktionen zur Initialisierung der
@@ -137,14 +142,14 @@ bool internal_create_surfaces() {
 		return false;
 	}
 
-	screen_tx = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, width, height);
+	screen_tx = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB1555, SDL_TEXTUREACCESS_STREAMING, width, height);
 	if (screen_tx == NULL) {
 		fprintf(stderr, "Couldn't create texture: %s\n", SDL_GetError());
 		return false;
 	}
 
 	// Use default bitmasks
-	screen = SDL_CreateRGBSurface(0, width, height, COLOUR_DEPTH, 0, 0, 0, 0);
+	screen = SDL_CreateRGBSurface(0, width, height, COLOUR_DEPTH, RMASK, GMASK, BMASK, AMASK);
 	if (screen == NULL) {
 		fprintf(stderr, "Couldn't get the window surface: %s\n", SDL_GetError());
 		return false;
