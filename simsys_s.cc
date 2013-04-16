@@ -22,10 +22,6 @@
 #include "simgraph.h"
 #include "simdebug.h"
 
-// try to use hardware double buffering ...
-// this is equivalent on 16 bpp and much slower on 32 bpp
-//#define USE_HW
-
 static Uint8 hourglass_cursor[] = {
 	0x3F, 0xFE, //   *************
 	0x30, 0x06, //   **         **
@@ -239,9 +235,7 @@ void internal_unlock() {
 // resizes screen
 int dr_textur_resize(unsigned short** const textur, int w, int const h)
 {
-#ifdef USE_HW
 	internal_unlock();
-#endif
 
 	display_set_actual_width( w );
 	// some cards need those alignments
@@ -305,39 +299,18 @@ void dr_prepare_flush()
 void dr_flush(void)
 {
 	display_flush_buffer();
-#ifdef USE_HW
 	internal_unlock();
 	SDL_RenderClear(renderer);
 	SDL_RenderCopy(renderer, screen_tx, NULL, NULL);
 	SDL_RenderPresent(renderer);
 	internal_lock();
-#endif
 }
 
 
 void dr_textur(int xp, int yp, int w, int h)
 {
-#ifndef USE_HW
-	// make sure the given rectangle is completely on screen
-	if (xp + w > screen->w) {
-		w = screen->w - xp;
-	}
-	if (yp + h > screen->h) {
-		h = screen->h - yp;
-	}
-#ifdef DEBUG
-	// make sure both are positive numbers
-	if(  w*h>0  )
-#endif
-	{
-		SDL_Rect rect;
-		rect.w = w;
-		rect.h = h;
-		rect.x = xp;
-		rect.y = yp;
-		SDL_UpdateRect(screen, &rect, 1);
-	}
-#endif
+	// TODO: remove this method. The SDL2 port always uses SDL_RenderPresent
+	// to render the entire screen.
 }
 
 
